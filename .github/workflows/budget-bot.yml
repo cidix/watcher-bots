@@ -11,6 +11,7 @@ permissions:
 jobs:
   run:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -22,9 +23,14 @@ jobs:
 
       - name: Run bot
         env:
-          BUDGET_TELEGRAM_BOT_TOKEN: ${{ secrets.BUDGET_TELEGRAM_BOT_TOKEN }}
-          BUDGET_TELEGRAM_CHAT_ID: ${{ secrets.BUDGET_TELEGRAM_CHAT_ID }}
+          # bestehende Secrets aus dem Repo
+          BUDGET_TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          BUDGET_TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+          # fixer Wechselkurs (einziger neuer Wert, falls noch nicht vorhanden)
           BUDGET_THB_TO_CHF: ${{ secrets.BUDGET_THB_TO_CHF }}
+
+          # Datenpfad für Monorepo
           BUDGET_DATA_DIR: bots/budget/data
         run: |
           python bots/budget/budget_bot.py
