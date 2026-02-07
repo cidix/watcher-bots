@@ -28,10 +28,10 @@ jobs:
           for i in 1 2 3; do
             echo "Attempt $i: connect to api.telegram.org:443"
             python - <<'PY' && exit 0
-import socket
-socket.create_connection(("api.telegram.org", 443), timeout=10).close()
-print("OK")
-PY
+            import socket
+            socket.create_connection(("api.telegram.org", 443), timeout=10).close()
+            print("OK")
+            PY
             echo "Failed attempt $i, sleeping..."
             sleep $((i*5))
           done
@@ -40,14 +40,9 @@ PY
 
       - name: Run bot
         env:
-          # existing secrets from the repo
           BUDGET_TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           BUDGET_TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-
-          # fixed exchange rate (only new value, if not present yet)
           BUDGET_THB_TO_CHF: ${{ secrets.BUDGET_THB_TO_CHF }}
-
-          # data path for monorepo
           BUDGET_DATA_DIR: bots/budget/data
         run: |
           python bots/budget/budget_bot.py
