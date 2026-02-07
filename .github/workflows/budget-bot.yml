@@ -21,22 +21,41 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Network smoke test (Telegram) with retry
+        shell: bash
+        run: |
+          set -euo pipefail
+          for i in 1 2 3; do
+            echo "Attempt $i: connect to api.telegram.org:443"
+            python - <<'PY' && exit 0
+import socket
+socket.create_connection(("api.telegram.org", 443), timeout=10).close()
+print("OK")
+PY
+            echo "Failed attempt $i, sleeping..."
+            sleep $((i*5))
+          done
+          echo "Network still unreachable after retries"
+          exit 2
+
       - name: Run bot
         env:
-          # bestehende Secrets aus dem Repo
+          # existing secrets from the repo
           BUDGET_TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           BUDGET_TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
-          # fixer Wechselkurs (einziger neuer Wert, falls noch nicht vorhanden)
+          # fixed exchange rate (only new value, if not present yet)
           BUDGET_THB_TO_CHF: ${{ secrets.BUDGET_THB_TO_CHF }}
 
-          # Datenpfad für Monorepo
+          # data path for monorepo
           BUDGET_DATA_DIR: bots/budget/data
         run: |
           python bots/budget/budget_bot.py
 
       - name: Commit data changes
+        shell: bash
         run: |
+          set -euo pipefail
           if [[ -n "$(git status --porcelain)" ]]; then
             git config user.name "budget-bot"
             git config user.email "budget-bot@users.noreply.github.com"
