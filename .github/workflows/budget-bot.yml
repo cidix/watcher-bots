@@ -3,7 +3,11 @@ name: Budget Bot (Telegram)
 on:
   schedule:
     - cron: "*/1 * * * *"
-  workflow_dispatch:
+  workflow_dispatch: {}
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -11,15 +15,26 @@ permissions:
 jobs:
   run:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+
+      - name: Install deps
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
       - name: Network smoke test (Telegram) with retry
         shell: bash
@@ -35,46 +50,50 @@ jobs:
           exit 2
 
       - name: Run bot
+        shell: bash
         env:
           BUDGET_TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           BUDGET_TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           BUDGET_THB_TO_CHF: ${{ secrets.BUDGET_THB_TO_CHF }}
           BUDGET_DATA_DIR: bots/budget/data
         run: |
-          python bots/budget/budget_bot.py
+          set -euo pipefail
+          python bots/budget/src/bot.py
 
-- name: Commit & push state (retry)
-  shell: bash
-  run: |
-    set -euo pipefail
+      - name: Commit & push state (retry)
+        shell: bash
+        run: |
+          set -euo pipefail
 
-    BOT_ID="budget"
-    DATA_DIR="bots/${BOT_ID}/data"
+          BOT_ID="budget"
+          DATA_DIR="bots/${BOT_ID}/data"
 
-    git config user.name "github-actions[bot]"
-    git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-    git add "${DATA_DIR}/"
+          git add "${DATA_DIR}/"
 
-    if git diff --cached --quiet; then
-      echo "No state changes to commit."
-      exit 0
-    fi
+          if git diff --cached --quiet; then
+            echo "No state changes to commit."
+            echo "No actionable change. State unchanged."
+            exit 0
+          fi
 
-    git commit -m "chore(state): update ${BOT_ID} state" || true
+          git commit -m "chore(state): update ${BOT_ID} state" || true
 
-    for i in 1 2 3; do
-      echo "Push attempt ${i}..."
-      git pull --rebase origin "${GITHUB_REF_NAME}"
+          for i in 1 2 3; do
+            echo "Push attempt ${i}..."
+            git pull --rebase origin "${GITHUB_REF_NAME}"
 
-      if git push origin "HEAD:${GITHUB_REF_NAME}"; then
-        echo "Push succeeded."
-        exit 0
-      fi
+            if git push origin "HEAD:${GITHUB_REF_NAME}"; then
+              echo "Push succeeded."
+              echo "State updated and persisted."
+              exit 0
+            fi
 
-      echo "Push failed. Retrying..."
-      sleep $((i*2))
-    done
+            echo "Push failed. Retrying..."
+            sleep $((i*2))
+          done
 
-    echo "Push failed after retries."
-    exit 1
+          echo "Push failed after retries."
+          exit 1
