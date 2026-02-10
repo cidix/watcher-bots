@@ -3,7 +3,12 @@ name: Garmin 965 Price Agent
 on:
   schedule:
     - cron: "7,37 * * * *"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      status:
+        description: "Send status message even if nothing changed"
+        required: false
+        default: "true"
 
 concurrency:
   group: ${{ github.workflow }}
@@ -28,6 +33,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: "pip"
 
       - name: Install deps
         shell: bash
@@ -36,7 +42,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # 👇 Jitter (0–24s)
       - name: Small jitter
         shell: bash
         run: sleep $((RANDOM % 25))
@@ -87,3 +92,16 @@ jobs:
 
           echo "Push failed after retries."
           exit 1
+
+      - name: Telegram status (manual run)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.status == 'true' }}
+        shell: bash
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          set -euo pipefail
+          TEXT="✅ GARMIN: workflow_dispatch OK\nRepo: $GITHUB_REPOSITORY\nRun: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          curl -sS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d "chat_id=${TELEGRAM_CHAT_ID}" \
+            --data-urlencode "text=${TEXT}" >/dev/null
