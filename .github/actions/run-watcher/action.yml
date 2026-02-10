@@ -45,6 +45,12 @@ runs:
       run: |
         set -euo pipefail
 
+        # Fail fast: pushing without a branch name is unsafe.
+        if [ -z "${GITHUB_REF_NAME:-}" ]; then
+          echo "GITHUB_REF_NAME is empty. Refusing to push." >&2
+          exit 1
+        fi
+
         BOT_ID="${{ inputs.bot_id }}"
         DATA_DIR_INPUT="${{ inputs.data_dir }}"
 
@@ -54,10 +60,30 @@ runs:
           DATA_DIR="bots/${BOT_ID}/data"
         fi
 
+        # Safety: only allow persisting under bots/<id>/data to prevent accidental repo-wide commits.
+        case "${DATA_DIR}" in
+          "bots/${BOT_ID}/data"|"bots/${BOT_ID}/data/"* ) ;;
+          * )
+            echo "Refusing to persist state outside bots/${BOT_ID}/data. Got: ${DATA_DIR}" >&2
+            exit 1
+            ;;
+        esac
+
         mkdir -p "${DATA_DIR}"
-        touch "${DATA_DIR}/.gitkeep"
+
+        # Create .gitkeep only if missing (avoid pointless timestamp/changes).
+        if [ ! -f "${DATA_DIR}/.gitkeep" ]; then
+          : > "${DATA_DIR}/.gitkeep"
+        fi
 
         git add "${DATA_DIR}/"
+
+        # Ensure we start from a clean working tree before any rebase/push logic.
+        if ! git diff --quiet || ! git diff --cached --quiet; then
+          echo "Working tree is not clean before rebase/push. Aborting to avoid rebase conflicts." >&2
+          git status --porcelain >&2 || true
+          exit 1
+        fi
 
         if git diff --cached --quiet; then
           echo "No state changes to commit."
