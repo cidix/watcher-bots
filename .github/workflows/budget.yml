@@ -3,7 +3,12 @@ name: Budget Bot (Telegram)
 on:
   schedule:
     - cron: "*/1 * * * *"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      status:
+        description: "Send status message even if nothing changed"
+        required: false
+        default: "true"
 
 concurrency:
   group: ${{ github.workflow }}
@@ -37,69 +42,25 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Network smoke test (Telegram) with retry
-        shell: bash
-        run: |
-          set -euo pipefail
-          for i in 1 2 3; do
-            echo "Attempt $i: connect to api.telegram.org:443"
-            python -c "import socket; socket.create_connection(('api.telegram.org', 443), timeout=10).close(); print('OK')" && exit 0
-            echo "Failed attempt $i, sleeping..."
-            sleep $((i*5))
-          done
-          echo "Network still unreachable after retries"
-          exit 2
-
-      - name: Run bot
-        shell: bash
-        working-directory: bots/budget
+      # Shared watcher pipeline (run + state persist)
+      - name: Run watcher pipeline
+        uses: ./.github/actions/run-watcher
         env:
-          # Prefer consistent secret names matching the env vars the script reads:
-          BUDGET_TELEGRAM_BOT_TOKEN: ${{ secrets.BUDGET_TELEGRAM_BOT_TOKEN }}
-          BUDGET_TELEGRAM_CHAT_ID: ${{ secrets.BUDGET_TELEGRAM_CHAT_ID }}
-          # Optional: only if you actually store this as a secret; otherwise remove.
-          BUDGET_THB_TO_CHF: ${{ secrets.BUDGET_THB_TO_CHF }}
-          # Critical: because we run inside bots/budget
-          BUDGET_DATA_DIR: "data"
-          PYTHONUNBUFFERED: "1"
-        run: |
-          set -euo pipefail
-          python budget_bot.py
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        with:
+          bot_id: budget
+          run_cmd: python bots/budget/budget_bot.py
 
-      - name: Commit & push state (retry)
+      - name: Telegram status (manual run)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.status == 'true' }}
         shell: bash
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           set -euo pipefail
-
-          BOT_ID="budget"
-          DATA_DIR="bots/${BOT_ID}/data"
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          git add "${DATA_DIR}/"
-
-          if git diff --cached --quiet; then
-            echo "No state changes to commit."
-            echo "No actionable change. State unchanged."
-            exit 0
-          fi
-
-          git commit -m "chore(state): update ${BOT_ID} state" || true
-
-          for i in 1 2 3; do
-            echo "Push attempt ${i}..."
-            git pull --rebase origin "${GITHUB_REF_NAME}"
-
-            if git push origin "HEAD:${GITHUB_REF_NAME}"; then
-              echo "Push succeeded."
-              echo "State updated and persisted."
-              exit 0
-            fi
-
-            echo "Push failed. Retrying..."
-            sleep $((i*2))
-          done
-
-          echo "Push failed after retries."
-          exit 1
+          TEXT="✅ BUDGET: workflow_dispatch OK\nRepo: $GITHUB_REPOSITORY\nRun: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          curl -sS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d "chat_id=${TELEGRAM_CHAT_ID}" \
+            --data-urlencode "text=${TEXT}" >/dev/null
