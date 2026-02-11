@@ -18,7 +18,7 @@ inputs:
     default: "25"
 
 runs:
-  using: composite
+  using: "composite"
   steps:
     - name: Setup git identity
       shell: bash
@@ -27,7 +27,7 @@ runs:
         git config user.name "github-actions[bot]"
         git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-    - name: Preflight: assert clean working tree
+    - name: "Preflight: assert clean working tree"
       shell: bash
       run: |
         set -euo pipefail
