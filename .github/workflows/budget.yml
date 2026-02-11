@@ -2,7 +2,7 @@ name: Budget Bot (Telegram)
 
 on:
   schedule:
-    - cron: "*/1 * * * *"
+    - cron: "*/5 * * * *"
   workflow_dispatch:
     inputs:
       status:
