@@ -11,8 +11,8 @@ on:
         default: "true"
 
 concurrency:
-  group: ${{ github.workflow }}
-  cancel-in-progress: false
+  group: watcher-garmin-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: write
@@ -42,7 +42,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # Shared watcher pipeline (run + state persist)
       - name: Run watcher pipeline
         uses: ./.github/actions/run-watcher
         env:
@@ -61,6 +60,6 @@ jobs:
         run: |
           set -euo pipefail
           TEXT="✅ GARMIN: workflow_dispatch OK\nRepo: $GITHUB_REPOSITORY\nRun: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
-          curl -sS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+          curl -f -sS --retry 3 --retry-delay 2 --max-time 20 -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             -d "chat_id=${TELEGRAM_CHAT_ID}" \
             --data-urlencode "text=${TEXT}" >/dev/null
